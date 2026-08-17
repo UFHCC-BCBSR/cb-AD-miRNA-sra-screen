@@ -1,0 +1,19 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# credentials — never commit an NCBI API key
+.env
+*.key
+
+# raw sequence data and archives
+*.fastq
+*.fastq.gz
+*.sra
+*.zip
+*.tar.gz
