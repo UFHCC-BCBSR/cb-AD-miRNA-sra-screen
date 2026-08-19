@@ -41,6 +41,10 @@ only in the abstract.
 
 5. **Read the titles.** See "Known failure modes" for why this is not optional.
 
+`queries/05_total_longread_screen.sql` is a second screen over the same
+intermediate tables, looking for total / long-read RNA-seq with random priming
+instead of small-RNA. It needs no re-scan — see "The other assay" below.
+
 ## Layout
 
 ```
@@ -70,6 +74,48 @@ Tissue is classified into `brain_prefrontal`, `brain_hippocampal`,
 `brain_other`, `csf`, `biofluid`, `cell_model`, or `unannotated`, and is
 **reported rather than filtered** — tissue is often recorded only at study
 level, so a hard tissue filter silently drops good studies.
+
+## The other assay: total / long-read RNA-seq
+
+Small-RNA is not the only target. `queries/05_total_longread_screen.sql`
+re-screens the *same* `sra_ad.ad_runs` table for randomly primed total-RNA and
+long-read libraries — the assay needed to see noncoding species that polyA
+selection strips out.
+
+This costs nothing extra, and the candidate pool is much larger than the 19
+studies in `results/04`. Steps 01 and 02 contain no assay, `libraryselection`,
+or `library_name` term at all — 01 anchored on disease vocabulary alone, and 02
+pulled every run from every matched BioProject. The only library-construction
+filter in the whole workflow is the `keep` block of Step 03.
+
+So a bulk RNA-seq AD study was anchored and materialised into `sra_ad.ad_runs`
+exactly like a miRNA study was, then discarded at the last step for failing
+`(n_assay_declared + n_library_declared) > 0`. Step 05 does not look for a
+hidden total-RNA arm inside the small-RNA hits; it recovers the studies Step 03
+threw away, which — since the discard criterion was *absence of small-RNA
+evidence* — is where the total-RNA studies are.
+
+Note also that Step 03's filters run against `agg`, i.e. `GROUP BY bioproject`.
+They are study-level, not run-level. `median_readlen BETWEEN 15 AND 120` is the
+median across *all* runs in a study, so a genuine matched design — small-RNA and
+total-RNA arms on the same subjects — could have been dropped whole because its
+combined median fell outside the window.
+
+A run qualifies if it is a short-read library declared `RANDOM`,
+`cDNA_randomPriming` or `Inverse rRNA` (or shows depletion-kit language in the
+free text), or if it is any long-read RNA library that is not small-RNA —
+long-read cDNA is random-primed by construction and its `libraryselection` is
+usually left blank.
+
+Differences from Step 03: case/control are counted **within the target arm
+only**, and nothing is hard-filtered on cohort size — every study with a
+candidate run comes back with a `verdict` column, because a zero-row result
+would not distinguish "no such data" from "filter too tight".
+
+**The limit that no regex fixes:** Steps 01 and 02 applied
+`consent = 'public'`. The well-powered AD brain transcriptomes — ROSMAP, MSBB,
+Mayo, the AMP-AD studies — are dbGaP controlled-access and are absent by
+construction. Getting those means a data access request, not a better query.
 
 ## Known failure modes
 
@@ -103,6 +149,8 @@ Every one of these was observed in real output. Read before trusting a result se
 | `results/02_strict_screen.csv` | 17 | Declared assay only, read-length and size filters |
 | `results/03_tissue_classified.csv` | 19 | Tissue split into brain regions vs biofluid |
 | `results/04_enriched_with_titles.csv` | 19 | Titles and abstracts from Entrez |
+| `results/05_longread.csv` | 23 | Total/long-read screen, first run |
+| `results/06_longread_enriched.csv` | 23 | Titles added; 2 query bugs found and fixed |
 
 Reading the titles in step 04 removed 6 of the 19 as wrong-target (FTD,
 Parkinson's, a platform evaluation, spatial transcriptomics, an ALS/FTD/PD

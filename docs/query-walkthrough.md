@@ -17,6 +17,7 @@ So:
 | `02_extract_study_runs.sql` | All of SRA (expensive) | Once |
 | `03_screen_and_rank.sql` | Your own small table (free) | As often as you like |
 | `04_inspect_study_attributes.sql` | Your own small table (free) | Ad hoc |
+| `05_total_longread_screen.sql` | Your own small table (free) | As often as you like |
 
 Steps 01 and 02 write tables into `sra_ad` and return no result grid. After
 they've run, all iteration happens against a few hundred MB instead of tens of
@@ -168,6 +169,59 @@ whatever the screen returns. **Run it and read the output.** In one iteration,
 Note that the script's `title_mentions_alzheimer` flag keys on a keyword list
 that includes `dementia`, `amyloid`, and `neurodegener`, so it returns TRUE for
 FTD and Parkinson's studies. It is a triage aid, not a verdict.
+
+## Step 05 — the same tables, a different assay
+
+Steps 01 and 02 contain no assay, `libraryselection` or `library_name` term
+anywhere — 01 anchored on *disease* alone, and 02 pulled every run in every
+matched BioProject. The only library-construction filter in the workflow is the
+`keep` block of Step 03.
+
+That makes the Step 05 pool the whole of `ad_anchor_runs`, not the 19 studies
+that survived Step 03. A bulk RNA-seq AD study was anchored and materialised
+into `sra_ad.ad_runs` like any other, then dropped for failing
+`(n_assay_declared + n_library_declared) > 0`. Step 05 is therefore not a hunt
+for a hidden total-RNA arm inside the small-RNA hits — it recovers what Step 03
+discarded, and the discard criterion was precisely *absence of small-RNA
+evidence*.
+
+Worth noting too that Step 03 filters `agg`, which is `GROUP BY bioproject`.
+Those thresholds are study-level. `median_readlen BETWEEN 15 AND 120` is the
+median over *all* runs in a study, so a real matched design — small-RNA plus
+total-RNA on the same subjects — could have been discarded whole because its
+combined median landed outside the window.
+
+Target definition, two ways in:
+
+- a short-read library declared `RANDOM` / `cDNA_randomPriming` /
+  `Inverse rRNA`, or with explicit depletion-kit language in the free text; or
+- any long-read RNA library that is not small-RNA. Long-read cDNA is
+  random-primed or full-length by construction, and PacBio/Nanopore submitters
+  routinely leave `libraryselection` blank, so platform alone qualifies.
+
+Two things it does differently from Step 03:
+
+**Case/control are counted within the target arm only.** A study whose AD
+labels all sit on its small-RNA runs would otherwise pass on the strength of
+runs we are not going to use.
+
+**Nothing is hard-filtered on cohort size.** Expected yield is low, and a
+`WHERE case >= 3` returning zero rows tells you nothing about why. Every study
+with at least one candidate run comes back, carrying a `verdict` column.
+
+One deliberate omission in the regex: bare `total rna`. Nearly every submitter
+writes "total RNA was extracted" in the attributes, polyA libraries included —
+it describes the input, not the library. Only kit names, depletion language and
+explicit priming language count as evidence.
+
+### The ceiling this cannot break
+
+`consent = 'public'` was applied in Steps 01 and 02. For small-RNA that cost
+little. For bulk/total AD brain RNA-seq it is decisive: ROSMAP, MSBB, Mayo —
+the AMP-AD studies, which are where the well-powered AD brain transcriptomes
+actually live — are dbGaP controlled-access. No public-consent query will ever
+return them. A thin Step 05 result is substantially an artifact of that, and
+the fix is a dbGaP data access request, not a better regex.
 
 ## Complementary approach
 
